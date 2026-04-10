@@ -6,7 +6,7 @@ import httpx
 from datetime import datetime, timezone
 import re
 
-app = FastAPI()
+app = FastAPI(title="Gender Classification API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
