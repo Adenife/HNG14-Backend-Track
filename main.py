@@ -18,6 +18,11 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handles RequestValidationError exceptions.
+
+    Returns a JSONResponse with a status code of 422 and a message indicating that the name must be a valid string containing only letters.
+    """
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
@@ -29,6 +34,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Handles HTTPException exceptions.
+
+    Returns a JSONResponse with the status code and detail from the exception.
+    """
     return JSONResponse(
         status_code=exc.status_code,
         content={"status": "error", "message": exc.detail},
@@ -39,6 +49,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def classify_name(
     name: str = Query(None),
 ):
+    """
+    Classify a name based on its gender.
+
+    Args:
+        name (str): The name to classify. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the classification result.
+
+    Raises:
+        HTTPException: If the name is missing or empty, or if the name contains non-alphabetic characters.
+        HTTPException: If the external API returns an error.
+    """
     if name is None or name.strip() == "":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Missing or empty name"
@@ -57,14 +80,12 @@ async def classify_name(
         except Exception:
             raise HTTPException(status_code=502, detail="External API error")
 
-    # Genderize Edge Cases
     if data.get("gender") is None or data.get("count") == 0:
         return {
             "status": "error",
             "message": "No prediction available for the provided name",
         }
 
-    # Confidence Logic
     prob = data.get("probability", 0)
     count = data.get("count", 0)
     is_confident = prob >= 0.7 and count >= 100
