@@ -89,6 +89,10 @@ hng_backend_stage0/
 ├── main.py             # Main API logic
 ├── requirements.txt    # Project dependencies
 ├── .gitignore          # Files to ignore (venv, __pycache__)
+├── app                 # main App logic
+   ├── core             # contains main configration logic
+   ├── models           # contains the schema logic
+   ├── routers          # contains router logic
 └── README.md           # Project documentation
 ```
 
