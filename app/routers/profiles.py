@@ -10,7 +10,7 @@ from ..core.config import settings
 from ..core.logging import configure_logging, LogLevel
 from ..models.schemas import profileSchema as schema
 
-router = APIRouter(prefix="/api/profiles", tags=["Profiles"])
+router = APIRouter()
 logger = configure_logging(level=LogLevel.DEBUG)
 
 # In-memory storage
@@ -135,7 +135,7 @@ async def fetch_external_data(name: str):
 
 
 @router.post(
-    "/",
+    "/profiles",
     status_code=status.HTTP_201_CREATED,
     response_model=Union[schema.ProfileResponse, schema.ProfileAlreadyExistsResponse],
 )
@@ -204,7 +204,7 @@ async def create_profile(
         )
 
 
-@router.get("/", response_model=schema.ProfileListResponse)
+@router.get("/profiles", response_model=schema.ProfileListResponse)
 async def get_all_profiles(
     gender: Optional[str] = None,
     country_id: Optional[str] = None,
@@ -236,7 +236,7 @@ async def get_all_profiles(
     return {"status": "success", "count": len(results), "data": results}
 
 
-@router.get("/{id}", response_model=schema.ProfileResponse)
+@router.get("/profiles/{id}", response_model=schema.ProfileResponse)
 async def get_single_profile(id: str):
     """
     Retrieves a single profile from the database.
@@ -258,7 +258,7 @@ async def get_single_profile(id: str):
     return {"status": "success", "data": profile}
 
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/profiles/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_profile(id: str):
     """
     Deletes a single profile from the database.
