@@ -1,11 +1,11 @@
-# HNG Stage 0 Backend: Name Classification API
+# HNG Stage 1 Backend: Profile Intelligence & Persistence API
 
-This project is a RESTful API built with **Python (FastAPI)** that classifies names based on gender data retrieved from the Genderize.io API. It processes the data to determine classification confidence and provides standardized JSON responses.
+This project is a high-performance profile management system built with FastAPI. It enriches user identities by concurrently fetching data from three external demographic APIs, applies custom classification logic, and ensures idempotent data persistence through an in-memory storage system.
 
 ## 🚀 Live Demo
 
 **Public API URL:** `[INSERT_YOUR_DEPLOYED_URL_HERE]`  
-**Endpoint:** `GET /api/classify?name=<name>`
+**API Documentation (Swagger):** `[INSERT_YOUR_DEPLOYED_URL_HERE]/docs`
 
 ---
 
@@ -21,9 +21,13 @@ This project is a RESTful API built with **Python (FastAPI)** that classifies na
 
 ## 📌 API Specification
 
-### GET `/api/classify`
+#### 1. Create Profile
 
-Takes a name as a query parameter and returns processed gender classification data.
+`POST /api/profiles`
+
+Processes a name and fetches data from Genderize, Agify, and Nationalize APIs.
+
+Request Body:
 
 #### Query Parameters
 
@@ -34,21 +38,23 @@ Takes a name as a query parameter and returns processed gender classification da
 
 | `name` | string | Yes | The name to be classified. |
 
-#### Successful Response (200 OK)
+#### 2. Get Single Profile
 
-```json
-{
-  "status": "success",
-  "data": {
-    "name": "Peter",
-    "gender": "male",
-    "probability": 0.99,
-    "sample_size": 1234,
-    "is_confident": true,
-    "processed_at": "2026-04-10T12:00:00Z"
-  }
-}
-```
+`GET /api/profiles/{id}`
+
+Retrieves a stored profile by its UUID v7.
+
+#### 3. Get All Profiles (Filtered)
+
+`GET /api/profiles?gender=male&country_id=NG&age_group=adult`
+
+Returns a list of all profiles with optional case-insensitive filtering.
+
+#### 4. Delete Profile
+
+`DELETE /api/profiles/{id}`
+
+Removes a profile from the persistent storage.
 
 ---
 
@@ -76,7 +82,7 @@ uv init
 Install dependencies using uv:
 
 ```
-uv add fastapi uvicorn httpx
+uv add -r requirements.txt
 
 ```
 

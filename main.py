@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import (
     gender_classifier,
+    profiles,
 )
 
 
@@ -22,6 +23,7 @@ app.add_middleware(
 
 
 app.include_router(gender_classifier.router, tags=["Gender Classifier"], prefix="/api")
+app.include_router(profiles.router, tags=["Profiles"], prefix="/api")
 
 
 @app.get("/api/check")

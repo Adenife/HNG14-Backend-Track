@@ -18,4 +18,5 @@ python-dotenv==1.2.2
 starlette==1.0.0
 typing-extensions==4.15.0
 typing-inspection==0.4.2
+uuid6==2025.0.1
 uvicorn==0.44.0
