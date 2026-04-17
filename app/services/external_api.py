@@ -3,6 +3,7 @@ import asyncio
 from fastapi import HTTPException
 
 from ..core.config import settings
+from ..core.database import external_api_cache
 from ..core.logging import configure_logging, LogLevel
 from ..utils.helpers import get_age_group
 
@@ -23,6 +24,11 @@ async def fetch_external_data(name: str):
         HTTPException (502): If any of the external APIs return an invalid response.
         HTTPException (502): If any of the external APIs fail to respond (e.g. timeout, DNS failure).
     """
+    # Cache hit — return immediately without hitting external APIs
+    if name in external_api_cache:
+        logger.info(f"Cache hit for name: {name}")
+        return external_api_cache[name]
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         # Define the concurrent tasks
         tasks = [
