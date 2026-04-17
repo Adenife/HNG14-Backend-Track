@@ -2,7 +2,7 @@ import re
 from uuid6 import uuid7
 from datetime import datetime, timezone
 from typing import Optional, Union
-from fastapi import APIRouter, HTTPException, status, Response, 
+from fastapi import APIRouter, HTTPException, status, Response, Request
 
 from ..core.logging import configure_logging, LogLevel
 from ..core.database import profiles_db, profiles_name_index
@@ -21,7 +21,7 @@ logger = configure_logging(level=LogLevel.DEBUG)
 )
 @limiter.limit("10/minute")
 async def create_profile(
-    payload: schema.ProfileCreateRequest, response: Response
+    request: Request, payload: schema.ProfileCreateRequest, response: Response
 ):
     """
     Creates a new profile in the database.
