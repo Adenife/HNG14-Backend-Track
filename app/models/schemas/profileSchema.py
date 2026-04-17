@@ -1,11 +1,13 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from uuid import UUID
 from typing import List, Optional
 
 
 class ProfileCreateRequest(BaseModel):
-    name: str
+    name: str = Field(
+        ..., description="The name of the profile to be created", max_length=100
+    )
 
 
 class ProfileDataSchema(BaseModel):
