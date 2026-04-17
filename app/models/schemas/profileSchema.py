@@ -1,15 +1,17 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from uuid import UUID
 from typing import List, Optional
 
 
 class ProfileCreateRequest(BaseModel):
-    name: str
+    name: str = Field(
+        ..., description="The name of the profile to be created", max_length=100
+    )
 
 
 class ProfileDataSchema(BaseModel):
-    id: str | UUID
+    id: str
     name: str
     gender: str
     gender_probability: float
@@ -24,17 +26,10 @@ class ProfileDataSchema(BaseModel):
 
 
 class ProfileResponse(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = ConfigDict(from_attributes=True)
 
     status: str
-    data: ProfileDataSchema
-
-
-class ProfileAlreadyExistsResponse(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
-
-    status: str
-    message: str
+    message: Optional[str] = None  # populated only when profile already exists
     data: ProfileDataSchema
 
 
