@@ -1,13 +1,14 @@
 import re
 from uuid6 import uuid7
 from datetime import datetime, timezone
-from typing import Optional, Dict, Union
-from fastapi import APIRouter, HTTPException, status, Response
+from typing import Optional, Union
+from fastapi import APIRouter, HTTPException, status, Response, 
 
 from ..core.logging import configure_logging, LogLevel
 from ..core.database import profiles_db, profiles_name_index
 from ..models.schemas import profileSchema as schema
 from ..services.external_api import fetch_external_data
+from ..core.limiter import limiter
 
 router = APIRouter()
 logger = configure_logging(level=LogLevel.DEBUG)
@@ -16,9 +17,12 @@ logger = configure_logging(level=LogLevel.DEBUG)
 @router.post(
     "/profiles",
     status_code=status.HTTP_201_CREATED,
-    response_model=Union[schema.ProfileResponse, schema.ProfileAlreadyExistsResponse],
+    response_model=schema.ProfileResponse,
 )
-async def create_profile(payload: schema.ProfileCreateRequest, response: Response):
+@limiter.limit("10/minute")
+async def create_profile(
+    payload: schema.ProfileCreateRequest, response: Response
+):
     """
     Creates a new profile in the database.
 

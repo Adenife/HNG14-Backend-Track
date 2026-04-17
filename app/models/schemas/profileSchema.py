@@ -11,7 +11,7 @@ class ProfileCreateRequest(BaseModel):
 
 
 class ProfileDataSchema(BaseModel):
-    id: str | UUID
+    id: str
     name: str
     gender: str
     gender_probability: float
@@ -26,17 +26,10 @@ class ProfileDataSchema(BaseModel):
 
 
 class ProfileResponse(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = ConfigDict(from_attributes=True)
 
     status: str
-    data: ProfileDataSchema
-
-
-class ProfileAlreadyExistsResponse(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
-
-    status: str
-    message: str
+    message: Optional[str] = None  # populated only when profile already exists
     data: ProfileDataSchema
 
 
