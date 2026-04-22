@@ -1,6 +1,6 @@
-# HNG Stage 1 Backend: Profile Intelligence & Persistence API
+# HNG Stage 2 Backend: Natural Language Querying & Seeding
 
-This project is a high-performance profile management system built with FastAPI. It enriches user identities by concurrently fetching data from three external demographic APIs, applies custom classification logic, and ensures idempotent data persistence through an in-memory storage system.
+This stage focuses on enhancing the Profile API with automated data seeding and a Natural Language Query (NLQ) engine that allows users to search for profiles using plain English.
 
 ## 🚀 Live Demo
 
@@ -19,42 +19,73 @@ This project is a high-performance profile management system built with FastAPI.
 
 ---
 
-## 📌 API Specification
+## 🧠 Natural Language Parsing (NLQ) Approach
 
-#### 1. Create Profile
+The parser follows a Pattern-Matching Strategy rather than using heavy AI models. This ensures the search is fast, deterministic, and easily debuggable.
 
-`POST /api/profiles`
+#### 1. Keyword Mapping & Extraction
 
-Processes a name and fetches data from Genderize, Agify, and Nationalize APIs.
+The logic uses a series of Regular Expressions (Regex) to extract intent from the search string:
 
-Request Body:
+| Keyword/Pattern | Captured Value | Logic / Filter Mapping |
 
-#### Query Parameters
+|-----------------|----------------|------------------------|
 
-| Parameter | Type | Required | Description |
+| `(?:from\|in)\s+([a-zA-Z\s]{2,})` | Country Name/Code | Mapped via pycountry to a 2-letter ISO code (country_id). |
 
-| :-------- | :----- | :------- | :------------------------------ |
-`
+| `(?:male\|female\|other)` | Gender | Normalized to lowercase and mapped to gender. |
 
-| `name` | string | Yes | The name to be classified. |
+| `\d+ (standalone)` | Age | If one number is found, it is treated as a specific age. |
 
-#### 2. Get Single Profile
+| `(\d+)\s+to\s+(\d+)` | Age Range | Mapped to min_age and max_age. |
 
-`GET /api/profiles/{id}`
+#### 2. The Logic Flow
 
-Retrieves a stored profile by its UUID v7.
+- Sanitization: The query is converted to lowercase and stripped of extra whitespace.
 
-#### 3. Get All Profiles (Filtered)
+- Entity Recognition: The engine runs regex patterns for countries first. It uses the pycountry.countries.lookup() method to handle both full names ("Nigeria") and codes ("NG") interchangeably.
 
-`GET /api/profiles?gender=male&country_id=NG&age_group=adult`
+- Numeric Analysis: It scans for numbers to determine age boundaries.
 
-Returns a list of all profiles with optional case-insensitive filtering.
+- Filter Assembly: Extracted values are packed into a filters dictionary.
 
-#### 4. Delete Profile
+- Fallback: If no recognizable keywords are found, it returns an empty filter set (fetching all profiles by default) or a 400 error if the status is explicitly set to "error".
 
-`DELETE /api/profiles/{id}`
+---
 
-Removes a profile from the persistent storage.
+## ⚠️ Limitations & Edge Cases
+
+While robust for standard queries, the following limitations apply:
+
+#### 1. Linguistic Limitations
+
+- Conjunctions: The parser does not handle complex "AND/OR" logic. A query like "Males from Kenya OR females from Nigeria" will likely only capture the last detected entities.
+
+- Negation: It cannot handle negative constraints (e.g., "People who are NOT from Nigeria"). It will see "Nigeria" and filter for it.
+
+- Stop-word interference: If a country name is also a common word that isn't preceded by "in" or "from," it may be missed.
+
+#### 2. Edge Cases Left Out
+
+- Ambiguous Abbreviations: Short 2-letter strings that aren't intended as country codes (e.g., "I am in in") may cause pycountry to return a LookupError, which the code catches and ignores.
+
+- Multi-Country Queries: If a user enters two countries (e.g., "People in Kenya and Nigeria"), the current regex implementation typically captures the first match and ignores the rest.
+
+- Non-English Input: The keywords (male, female, from, in) are hardcoded in English.
+
+- Age Relativity: Phrases like "older than 20" or "seniors" are not supported; the parser specifically looks for numeric ranges or specific digits.
+
+---
+
+## 🚦 API Endpoints
+
+| Method | Endpoint | Description |
+
+|--------|----------|-------------|
+
+| GET | `/api/seed-profiles` | Seeds the database with initial profile data from seed_profiles.json. |
+
+| GET | `/api/profiles/search` | Performs NLQ search using search, page, and limit params. |
 
 ---
 
@@ -99,6 +130,8 @@ hng_backend_stage0/
    ├── core             # contains main configration logic
    ├── models           # contains the schema logic
    ├── routers          # contains router logic
+   ├── services         # contains logic for external services
+   ├── utils            # contains utility services
 └── README.md           # Project documentation
 ```
 
