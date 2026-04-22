@@ -105,5 +105,6 @@ async def fetch_external_data(name: str):
             "age": a_res["age"],
             "age_group": get_age_group(a_res["age"]),
             "country_id": top_country["country_id"],
+            "country_name": top_country["country_name"],
             "country_probability": top_country["probability"],
         }

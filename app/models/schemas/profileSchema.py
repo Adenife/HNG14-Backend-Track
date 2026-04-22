@@ -11,29 +11,31 @@ class ProfileCreateRequest(BaseModel):
 
 
 class ProfileDataSchema(BaseModel):
-    id: str
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID | None = None
     name: str
     gender: str
     gender_probability: float
-    sample_size: int
+    sample_size: Optional[int] = None
     age: int
     age_group: str
     country_id: str
+    country_name: str
     country_probability: float
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+    created_at: datetime | None = None
 
 
 class ProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    model_config = {"arbitrary_types_allowed": True}
 
     status: str
-    message: Optional[str] = None  # populated only when profile already exists
+    message: Optional[str] = None
     data: ProfileDataSchema
 
 
-class ProfileListResponse(BaseModel):
+class ProfileListResponse_Old(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     model_config = {"arbitrary_types_allowed": True}
 
     status: str
@@ -41,7 +43,20 @@ class ProfileListResponse(BaseModel):
     data: List[ProfileDataSchema]
 
 
+class ProfileListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    model_config = {"arbitrary_types_allowed": True}
+
+    status: str
+    page: Optional[int] = None
+    limit: Optional[int] = None
+    total: Optional[int] = None
+    message: Optional[str] = None
+    data: List[ProfileDataSchema]
+
+
 class ErrorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     model_config = {"arbitrary_types_allowed": True}
 
     status: str

@@ -8,10 +8,14 @@ from app.core.limiter import limiter
 from app.routers import (
     gender_classifier,
     profiles,
+    populators,
 )
+from app.models import models
+from app.core.database import engine
 
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
+models.Base.metadata.create_all(bind=engine)
 
 # Register slowapi rate limiter
 app.state.limiter = limiter
@@ -30,6 +34,7 @@ app.add_middleware(
 
 app.include_router(gender_classifier.router, tags=["Gender Classifier"], prefix="/api")
 app.include_router(profiles.router, tags=["Profiles"], prefix="/api")
+app.include_router(populators.router, tags=["Populators"], prefix="/api")
 
 
 @app.get("/api/check")
