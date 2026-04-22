@@ -22,16 +22,10 @@ async def seed_profile(db: Session, profile: dict):
     Returns:
     - The created profile object.
     """
-    # 1. Validate the dictionary using your schema
+
     validated_data = schemas.ProfileDataSchema(**profile)
-
-    # 2. Convert the validated schema to a SQLAlchemy model
-    # .model_dump() (Pydantic v2) or .dict() (Pydantic v1)
     db_profile = models.Profile(**validated_data.model_dump())
-
     db.add(db_profile)
-    db.commit()
-    db.refresh(db_profile)
     return db_profile
 
 
@@ -110,15 +104,18 @@ async def get_profiles_old(
     limit: int = 100,
 ):
     """
-    Asynchronous function to retrieve users from the database.
+    Retrieves profiles from the database based on various filters.
 
     Args:
         db (Session): The database session.
-        skip (int, optional): Number of records to skip. Defaults to 0.
-        limit (int, optional): Maximum number of records to retrieve. Defaults to 100.
+        gender (str, optional): The gender filter. Defaults to None.
+        country_id (str, optional): The country ID filter. Defaults to None.
+        age_group (str, optional): The age group filter. Defaults to None.
+        skip (int, optional): The number of records to skip. Defaults to 0.
+        limit (int, optional): The maximum number of records to retrieve. Defaults to 10.
 
     Returns:
-        List[User]: List of user objects retrieved from the database.
+        List[Profile]: The list of profiles matching the filters.
     """
     query = db.query(models.Profile)
     if gender:
@@ -148,6 +145,26 @@ async def get_profiles(
     skip: int = 0,
     limit: int = 10,
 ):
+    """
+    Retrieves profiles from the database based on various filters.
+
+    Args:
+        db (Session): The database session.
+        gender (str, optional): The gender filter. Defaults to None.
+        country_id (str, optional): The country ID filter. Defaults to None.
+        age_group (str, optional): The age group filter. Defaults to None.
+        min_age (int, optional): The minimum age filter. Defaults to None.
+        max_age (int, optional): The maximum age filter. Defaults to None.
+        min_gender_probability (float, optional): The minimum gender probability filter. Defaults to None.
+        min_country_probability (float, optional): The minimum country probability filter. Defaults to None.
+        sort_by (str, optional): The field to sort by. Defaults to "created_at".
+        order_by (str, optional): The sort order. Defaults to "desc".
+        skip (int, optional): The number of records to skip. Defaults to 0.
+        limit (int, optional): The maximum number of records to retrieve. Defaults to 10.
+
+    Returns:
+        List[Profile]: The list of profiles matching the filters.
+    """
     ALLOWED_SORT_FIELDS = {
         "age",
         "created_at",

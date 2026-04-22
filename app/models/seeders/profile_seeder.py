@@ -1,5 +1,6 @@
 import json
 import os
+import ijson
 from sqlalchemy.orm import Session
 from ...models.cruds import profileCrud as crud
 
@@ -22,21 +23,35 @@ async def seed_profiles(db: Session, file_path: str = "seed_profiles.json"):
         print(f"File not found: {full_path}")
         return
 
-    with open(full_path, "r") as f:
-        data = json.load(f)
-
-    profiles_data = data.get("profiles", [])
+    # How many records to hold in memory before writing to disk
+    BATCH_SIZE = 1000
 
     try:
-        print(f"Seeding {len(profiles_data)} profiles...")
+        print("Starting streaming seed using CRUD function...")
 
-        for p in profiles_data:
-            # Ensure the CRUD function name matches here
-            await crud.seed_profile(db, p)
+        with open(full_path, "rb") as f:
+            # Stream the 'profiles' array items
+            profiles_stream = ijson.items(f, "profiles.item")
 
-        print("Database seeded successfully!")
+            count = 0
+            for profile_data in profiles_stream:
+                # Call your CRUD function (Now fast because it doesn't commit)
+                await crud.seed_profile(db, profile_data)
+
+                count += 1
+
+                # Commit every 1000 records
+                if count % BATCH_SIZE == 0:
+                    db.commit()
+                    # Optional: db.expunge_all()
+                    # Use expunge_all if you have millions of rows to keep RAM low
+                    print(f"Committed {count} profiles...")
+
+            # Final commit for the remaining records
+            db.commit()
+            print(f"Success! Total seeded: {count}")
 
     except Exception as e:
-        print(f"Error seeding database: {e}")
+        print(f"Error: {e}")
         db.rollback()
         raise e
