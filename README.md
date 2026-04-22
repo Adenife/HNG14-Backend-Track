@@ -73,8 +73,6 @@ While robust for standard queries, the following limitations apply:
 
 - Non-English Input: The keywords (male, female, from, in) are hardcoded in English.
 
-- Age Relativity: Phrases like "older than 20" or "seniors" are not supported; the parser specifically looks for numeric ranges or specific digits.
-
 ---
 
 ## 🚦 API Endpoints
