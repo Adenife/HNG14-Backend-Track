@@ -96,8 +96,17 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
         filters["min_age"] = 16
         filters["max_age"] = 24
     else:
-        for group in AGE_GROUPS.keys():
-            if group in query:
+        age_patterns = {
+            "child": [r"child", r"children", r"kid", r"kids"],
+            "teenager": [r"teenager", r"teenagers", r"teen", r"teens"],
+            "adult": [r"adult", r"adults"],
+            "senior": [r"senior", r"seniors", r"elderly"],
+        }
+
+        for group, patterns in age_patterns.items():
+            # Join patterns with OR (|) and check for word boundaries (\b)
+            combined_pattern = r"\b(" + "|".join(patterns) + r")\b"
+            if re.search(combined_pattern, query):
                 filters["age_group"] = group
                 break
 
