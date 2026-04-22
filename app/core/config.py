@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Profile Intelligence & Persistence API"
-    PROJECT_VERSION: str = "1.0.1"
+    PROJECT_NAME: str = "Natural Language Querying & Seeding"
+    PROJECT_VERSION: str = "1.0.2"
 
     GENDER_BASE_URL: str = "https://api.genderize.io/"
     AGIFY_BASE_URL: str = "https://api.agify.io/"
