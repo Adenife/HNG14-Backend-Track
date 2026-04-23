@@ -252,7 +252,7 @@ async def get_all_profiles(
 )
 async def get_profile_natural_query(
     db: Session = Depends(get_db),
-    search: str = Query(..., min_length=1, max_length=200),
+    q: str = Query(..., min_length=1, max_length=200, alias="q"),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
 ):
@@ -274,7 +274,7 @@ async def get_profile_natural_query(
         ProfileListResponse: The response containing the status, page number, limit, total count, and the list of matching profiles.
     """
     try:
-        filters = parse_natural_query(search)
+        filters = parse_natural_query(q)
 
         if filters.get("status") == "error":
             raise HTTPException(
