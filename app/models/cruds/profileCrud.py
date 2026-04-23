@@ -5,6 +5,7 @@ import json
 import uuid
 from typing import Optional
 from sqlalchemy import desc, asc
+from fastapi import HTTPException
 
 
 from ...models import models
@@ -182,9 +183,9 @@ async def get_profiles(
         query = query.filter(models.Profile.age_group.ilike(age_group))
 
     if min_age is not None:
-        query = query.filter(models.Profile.age >= min_age)
+        query = query.filter(models.Profile.age > min_age)
     if max_age is not None:
-        query = query.filter(models.Profile.age <= max_age)
+        query = query.filter(models.Profile.age < max_age)
     if min_gender_probability is not None:
         query = query.filter(
             models.Profile.gender_probability >= min_gender_probability
@@ -194,11 +195,15 @@ async def get_profiles(
             models.Profile.country_probability >= min_country_probability
         )
 
-    if not sort_by or sort_by not in ALLOWED_SORT_FIELDS:
-        sort_attr = models.Profile.created_at
-    else:
-        # Now the IDE knows sort_by is definitely a valid string
-        sort_attr = getattr(models.Profile, sort_by)
+    if sort_by and sort_by not in ALLOWED_SORT_FIELDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sort field. Allowed fields are: {', '.join(ALLOWED_SORT_FIELDS)}",
+        )
+
+    # Now it's safe to use or default
+    sort_field_name = sort_by or "created_at"
+    sort_attr = getattr(models.Profile, sort_field_name)
 
     if order_by == "desc":
         query = query.order_by(desc(sort_attr))

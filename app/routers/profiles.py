@@ -154,8 +154,8 @@ async def get_all_profiles(
     max_age: Optional[int] = None,
     min_gender_probability: Optional[float] = None,
     min_country_probability: Optional[float] = None,
-    sort_by: Optional[str] = "created_at",
-    order: Optional[str] = "desc",
+    sort_by: Optional[str] = None,
+    order: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
 ):
@@ -189,6 +189,27 @@ async def get_all_profiles(
         - Exception: If any other exception occurs.
     """
     try:
+
+        ALLOWED_SORT_FIELDS = {
+            "age",
+            "created_at",
+            "gender_probability",
+            "country_probability",
+        }
+        ALLOWED_ORDER = {"asc", "desc"}
+
+        # 2. Check if the values are valid (This replaces the None check)
+        if sort_by not in ALLOWED_SORT_FIELDS or order not in ALLOWED_ORDER:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "error",
+                    "message": "Invalid Query Parameters",
+                    # "allowed_sort_by": list(ALLOWED_SORT_FIELDS),
+                    # "allowed_order": list(ALLOWED_ORDER)
+                },
+            )
+
         # Pagination math
         skip = (page - 1) * limit
 
@@ -216,15 +237,11 @@ async def get_all_profiles(
             status="success", page=page, limit=limit, total=total_count, data=results
         )
 
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
+    except HTTPException:
         raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-        )
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.get(
