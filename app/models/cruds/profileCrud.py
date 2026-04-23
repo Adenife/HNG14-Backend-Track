@@ -183,9 +183,9 @@ async def get_profiles(
         query = query.filter(models.Profile.age_group.ilike(age_group))
 
     if min_age is not None:
-        query = query.filter(models.Profile.age > min_age)
+        query = query.filter(models.Profile.age >= min_age)
     if max_age is not None:
-        query = query.filter(models.Profile.age < max_age)
+        query = query.filter(models.Profile.age <= max_age)
     if min_gender_probability is not None:
         query = query.filter(
             models.Profile.gender_probability >= min_gender_probability

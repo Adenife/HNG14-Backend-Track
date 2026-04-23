@@ -90,8 +90,8 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
 
     # handle Age Groups (including the "young" rule)
     if "young" in query:
-        filters["min_age"] = 15
-        filters["max_age"] = 25
+        filters["min_age"] = 16
+        filters["max_age"] = 24
     else:
         age_patterns = {
             "child": [r"child", r"children", r"kid", r"kids"],
@@ -110,11 +110,11 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
     # handle Numeric Constraints (e.g., "above 30", "under 18")
     above_match = re.search(r"(?:above|over|older than)\s+(\d+)", query)
     if above_match:
-        filters["min_age"] = int(above_match.group(1))
+        filters["min_age"] = int(above_match.group(1)) + 1
 
     below_match = re.search(r"(?:under|below|younger than)\s+(\d+)", query)
     if below_match:
-        filters["max_age"] = int(below_match.group(1))
+        filters["max_age"] = int(below_match.group(1)) - 1
 
     # handle Country
     country_match = re.search(r"(?:from|in)\s+([a-zA-Z\s]{2,})", query)
