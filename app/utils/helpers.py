@@ -78,11 +78,8 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
     query = q.lower().strip()
     filters = {}
 
-    is_female = "female" in query
-    is_male = (
-        "male" in query
-        and "female" not in query[query.find("male") - 2 : query.find("male")]
-    )
+    is_female = bool(re.search(r"\bfemales?\b", query, re.IGNORECASE))
+    is_male = bool(re.search(r"\bmales?\b", query, re.IGNORECASE))
 
     if is_female and is_male:
         pass
@@ -93,8 +90,8 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
 
     # handle Age Groups (including the "young" rule)
     if "young" in query:
-        filters["min_age"] = 16
-        filters["max_age"] = 24
+        filters["min_age"] = 15
+        filters["max_age"] = 25
     else:
         age_patterns = {
             "child": [r"child", r"children", r"kid", r"kids"],

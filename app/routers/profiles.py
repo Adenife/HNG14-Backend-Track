@@ -216,15 +216,13 @@ async def get_all_profiles(
             status="success", page=page, limit=limit, total=total_count, data=results
         )
 
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
+    except HTTPException:
         raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-        )
+        if "DataError" in str(type(e)) or "ProgrammingError" in str(type(e)):
+            raise HTTPException(status_code=400, detail="Invalid query parameters")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.get(
