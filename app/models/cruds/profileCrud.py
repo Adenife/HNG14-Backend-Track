@@ -195,15 +195,10 @@ async def get_profiles(
             models.Profile.country_probability >= min_country_probability
         )
 
-    if sort_by and sort_by not in ALLOWED_SORT_FIELDS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid sort field. Allowed fields are: {', '.join(ALLOWED_SORT_FIELDS)}",
-        )
-
-    # Now it's safe to use or default
-    sort_field_name = sort_by or "created_at"
-    sort_attr = getattr(models.Profile, sort_field_name)
+    if not sort_by or sort_by not in ALLOWED_SORT_FIELDS:
+        sort_attr = models.Profile.created_at
+    else:
+        sort_attr = getattr(models.Profile, sort_by)
 
     if order_by == "desc":
         query = query.order_by(desc(sort_attr))
