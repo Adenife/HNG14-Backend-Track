@@ -154,8 +154,8 @@ async def get_all_profiles(
     max_age: Optional[int] = None,
     min_gender_probability: Optional[float] = None,
     min_country_probability: Optional[float] = None,
-    sort_by: Optional[str] = None,
-    order: Optional[str] = None,
+    sort_by: Optional[str] = "created_at",
+    order: Optional[str] = "desc",
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
 ):
