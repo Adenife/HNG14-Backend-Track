@@ -35,6 +35,7 @@ used_states: set[str] = set()
 
 
 @router.get("/github")
+@limiter.limit("10/minute")
 async def github_login(
     request: Request,
     redirect_uri: Optional[str] = None,
@@ -56,41 +57,36 @@ async def github_login(
     Raises:
         HTTPException: If required parameters are missing.
     """
+    if not state:
+        raise HTTPException(status_code=400, detail="state is required")
 
-    # 1. Provide a fallback for state if it's missing (helps tracking)
-    actual_state = state or "default_state"
+    if not code_challenge:
+        raise HTTPException(
+            status_code=400,
+            detail="code_challenge is required for PKCE flow",
+        )
 
-    # 2. Guard the startswith check to prevent the 'NoneType' AttributeError
-    is_cli = False
-    if redirect_uri:
-        is_cli = redirect_uri.startswith("http://localhost:8899")
-    else:
-        # Fallback to the default callback if redirect_uri is missing
-        redirect_uri = GITHUB_CALLBACK_URL
+    is_cli = redirect_uri is not None and "localhost:8899" in redirect_uri
 
-    # 3. Store the session data for the callback/exchange steps
-    oauth_sessions[actual_state] = {
-        "redirect_uri": redirect_uri,
+    final_redirect_uri = GITHUB_CALLBACK_URL
+
+    oauth_sessions[state] = {
+        "redirect_uri": redirect_uri or final_redirect_uri,
         "is_cli": is_cli,
         "code_challenge": code_challenge,
     }
 
-    # 4. Prepare parameters for GitHub
     params = {
         "client_id": settings.GITHUB_CLIENT_ID,
-        "redirect_uri": GITHUB_CALLBACK_URL,
-        "state": actual_state,
+        "redirect_uri": final_redirect_uri,
+        "state": state,
         "scope": "read:user user:email",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
 
-    # 5. Only add PKCE params if a code_challenge was actually provided
-    if code_challenge:
-        params["code_challenge"] = code_challenge
-        params["code_challenge_method"] = "S256"
-
-    # Construct URL and redirect
     url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
-    return RedirectResponse(url=url)
+    return RedirectResponse(url)
 
 
 @router.get("/github/callback")
@@ -115,23 +111,31 @@ async def github_callback(
     Raises:
         HTTPException: If the state is invalid or expired.
     """
+    if not code:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Missing authorization code"},
+        )
+
+    if not state:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Missing state parameter"},
+        )
+
     if state in used_states:
-        return Response(
-            content="""
-            <html>
-                <body style="font-family:sans-serif;text-align:center;padding:60px">
-                    <h3>Login already completed</h3>
-                    <p>You can safely close this tab.</p>
-                </body>
-            </html>
-            """,
-            media_type="text/html",
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "State already used"},
         )
 
     session = oauth_sessions.get(state)
 
     if not session:
-        raise HTTPException(status_code=400, detail="Invalid or expired state")
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Invalid or expired state"},
+        )
 
     redirect_uri = session["redirect_uri"]
     is_cli = session.get("is_cli", False)
@@ -140,7 +144,6 @@ async def github_callback(
     oauth_sessions.pop(state, None)
 
     if code == "test_code":
-        # Try to find existing admin
         user = db.query(models.User).filter_by(email="admin@example.com").first()
 
         if not user:
@@ -156,21 +159,15 @@ async def github_callback(
             db.commit()
             db.refresh(user)
 
-        token_payload = {"sub": str(user.id), "role": user.role}
-        access_token = create_access_token(token_payload)
-        refresh_token = create_refresh_token(token_payload)
+        payload = {"sub": str(user.id), "role": user.role}
 
         return {
             "status": "success",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": create_access_token(payload),
+            "refresh_token": create_refresh_token(payload),
             "token_type": "bearer",
             "username": user.username,
         }
-
-    if is_cli:
-        redirect_url = f"{redirect_uri}?code={code}&state={state}"
-        return RedirectResponse(redirect_url)
 
     redirect_url = f"{redirect_uri}?code={code}&state={state}"
     return RedirectResponse(redirect_url)
@@ -283,7 +280,12 @@ async def refresh_tokens(
         HTTPException: If the refresh token is invalid, revoked, or expired.
     """
 
+    if request.method != "POST":
+        raise HTTPException(status_code=405, detail="Method not allowed")
+
     raw_refresh = payload.refresh_token
+    if not raw_refresh:
+        raise HTTPException(status_code=400, detail="Missing refresh token")
 
     try:
         token_payload = verify_token(raw_refresh, expected_type="refresh")
@@ -295,7 +297,8 @@ async def refresh_tokens(
     if not db_token or db_token.is_revoked:
         raise HTTPException(status_code=401, detail="Token revoked")
 
-    if db_token.expires_at < datetime.now(timezone.utc):
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    if db_token.expires_at < now:
         raise HTTPException(status_code=401, detail="Token expired")
 
     user = await userCrud.get_user_by_id(db, token_payload["sub"])
@@ -304,22 +307,59 @@ async def refresh_tokens(
         raise HTTPException(status_code=403, detail="User invalid")
 
     await userCrud.revoke_refresh_token(db, raw_refresh)
-
     new_payload = {"sub": str(user.id), "role": user.role}
+
     new_access = create_access_token(new_payload)
     new_refresh = create_refresh_token(new_payload)
 
-    new_expires = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
-    )
+    new_expires = now + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
 
     await userCrud.store_refresh_token(db, user.id, new_refresh, new_expires)
 
-    return {
-        "status": "success",
-        "access_token": new_access,
-        "refresh_token": new_refresh,
-    }
+    return TokenResponse(
+        status="success",
+        access_token=new_access,
+        refresh_token=new_refresh,
+        token_type="bearer",
+    )
+
+    # raw_refresh = payload.refresh_token
+
+    # try:
+    #     token_payload = verify_token(raw_refresh, expected_type="refresh")
+    # except HTTPException:
+    #     raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # db_token = await userCrud.get_refresh_token(db, raw_refresh)
+
+    # if not db_token or db_token.is_revoked:
+    #     raise HTTPException(status_code=401, detail="Token revoked")
+
+    # if db_token.expires_at < datetime.now(timezone.utc):
+    #     raise HTTPException(status_code=401, detail="Token expired")
+
+    # user = await userCrud.get_user_by_id(db, token_payload["sub"])
+
+    # if not user or not user.is_active:
+    #     raise HTTPException(status_code=403, detail="User invalid")
+
+    # await userCrud.revoke_refresh_token(db, raw_refresh)
+
+    # new_payload = {"sub": str(user.id), "role": user.role}
+    # new_access = create_access_token(new_payload)
+    # new_refresh = create_refresh_token(new_payload)
+
+    # new_expires = datetime.now(timezone.utc) + timedelta(
+    #     minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
+    # )
+
+    # await userCrud.store_refresh_token(db, user.id, new_refresh, new_expires)
+
+    # return {
+    #     "status": "success",
+    #     "access_token": new_access,
+    #     "refresh_token": new_refresh,
+    # }
 
 
 @router.post("/logout")

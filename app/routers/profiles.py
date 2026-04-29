@@ -25,6 +25,7 @@ from ..models.cruds import profileCrud as crud_profile
 from ..models.schemas import profileSchema as schema
 from ..services.external_api import fetch_external_data
 from ..utils.helpers import parse_natural_query
+from ..models.schemas.userSchema import WhoAmIResponse
 
 router = APIRouter()
 logger = configure_logging(level=LogLevel.DEBUG)
@@ -525,3 +526,26 @@ async def get_all_profiles_old(
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+@router.get("/users/me", response_model=WhoAmIResponse)
+@limiter.limit("10/minute")
+async def whoami(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Get the current authenticated user's information.
+
+    Args:
+        request (Request): The incoming HTTP request.
+        current_user (models.User): The authenticated current user.
+
+    Returns:
+        WhoAmIResponse: A dictionary containing the current user's data.
+
+    Raises:
+        HTTPException: If the user is not authenticated.
+    """
+
+    return {"status": "success", "data": current_user}
