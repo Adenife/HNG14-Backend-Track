@@ -34,6 +34,50 @@ oauth_sessions: dict[str, dict] = {}
 used_states: set[str] = set()
 
 
+# @router.get("/github")
+# async def github_login(
+#     request: Request,
+#     redirect_uri: Optional[str] = None,
+#     state: Optional[str] = None,
+#     code_challenge: Optional[str] = None,
+# ):
+#     """
+#     Initiate GitHub OAuth login flow.
+
+#     Args:
+#         request (Request): The incoming HTTP request.
+#         redirect_uri (str): The URI to redirect to after authorization.
+#         state (str): A unique state parameter for security.
+#         code_challenge (str): The PKCE code challenge for secure authorization.
+
+#     Returns:
+#         RedirectResponse: A redirect to GitHub's authorization page.
+
+#     Raises:
+#         HTTPException: If required parameters are missing.
+#     """
+
+#     # Detect client type
+#     is_cli = redirect_uri.startswith("http://localhost:8899")
+
+#     oauth_sessions[state] = {
+#         "redirect_uri": redirect_uri,
+#         "is_cli": is_cli,
+#     }
+
+#     params = {
+#         "client_id": settings.GITHUB_CLIENT_ID,
+#         "redirect_uri": GITHUB_CALLBACK_URL,
+#         "state": state,
+#         "scope": "read:user user:email",
+#         "code_challenge": code_challenge,
+#         "code_challenge_method": "S256",
+#     }
+
+#     url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
+#     return RedirectResponse(url=url)
+
+
 @router.get("/github")
 async def github_login(
     request: Request,
@@ -57,23 +101,38 @@ async def github_login(
         HTTPException: If required parameters are missing.
     """
 
-    # Detect client type
-    is_cli = redirect_uri.startswith("http://localhost:8899")
+    # 1. Provide a fallback for state if it's missing (helps tracking)
+    actual_state = state or "default_state"
 
-    oauth_sessions[state] = {
+    # 2. Guard the startswith check to prevent the 'NoneType' AttributeError
+    is_cli = False
+    if redirect_uri:
+        is_cli = redirect_uri.startswith("http://localhost:8899")
+    else:
+        # Fallback to the default callback if redirect_uri is missing
+        redirect_uri = GITHUB_CALLBACK_URL
+
+    # 3. Store the session data for the callback/exchange steps
+    oauth_sessions[actual_state] = {
         "redirect_uri": redirect_uri,
         "is_cli": is_cli,
+        "code_challenge": code_challenge,
     }
 
+    # 4. Prepare parameters for GitHub
     params = {
         "client_id": settings.GITHUB_CLIENT_ID,
         "redirect_uri": GITHUB_CALLBACK_URL,
-        "state": state,
+        "state": actual_state,
         "scope": "read:user user:email",
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
     }
 
+    # 5. Only add PKCE params if a code_challenge was actually provided
+    if code_challenge:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
+
+    # Construct URL and redirect
     url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
     return RedirectResponse(url=url)
 
