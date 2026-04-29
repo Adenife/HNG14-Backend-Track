@@ -20,44 +20,48 @@ class ProfileDataSchema(BaseModel):
     age: int
     age_group: str
     country_id: str
-    country_name: str
+    country_name: Optional[str] = None
     country_probability: float
     created_at: datetime | None = None
 
 
 class ProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    model_config = {"arbitrary_types_allowed": True}
 
     status: str
     message: Optional[str] = None
     data: ProfileDataSchema
 
 
+class PaginationLinks(BaseModel):
+    self: str
+    next: Optional[str] = None
+    prev: Optional[str] = None
+
+
+class ProfileListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str
+    page: int
+    limit: int
+    total: int
+    total_pages: int
+    links: PaginationLinks
+    data: List[ProfileDataSchema]
+
+
+# Kept for backwards-compatible /profiles/old endpoint
 class ProfileListResponse_Old(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    model_config = {"arbitrary_types_allowed": True}
 
     status: str
     count: int
     data: List[ProfileDataSchema]
 
 
-class ProfileListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    model_config = {"arbitrary_types_allowed": True}
-
-    status: str
-    page: Optional[int] = None
-    limit: Optional[int] = None
-    total: Optional[int] = None
-    message: Optional[str] = None
-    data: List[ProfileDataSchema]
-
-
 class ErrorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    model_config = {"arbitrary_types_allowed": True}
 
     status: str
     message: str

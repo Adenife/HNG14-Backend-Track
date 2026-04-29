@@ -1,5 +1,13 @@
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from fastapi import Request
 
-# Rate limiter keyed by client IP address
-limiter = Limiter(key_func=get_remote_address)
+
+def key_func(request: Request) -> str:
+    """
+    Rate-limit by IP address only (safe, async-compatible).
+    """
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=key_func)

@@ -1,11 +1,7 @@
 from sqlalchemy.orm import Session
-from pydantic import EmailStr
-from datetime import datetime
-import json
 import uuid
 from typing import Optional
 from sqlalchemy import desc, asc
-from fastapi import HTTPException
 
 
 from ...models import models

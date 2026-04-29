@@ -2,7 +2,6 @@ import logging
 import sys
 from enum import StrEnum
 from typing import Optional
-from pathlib import Path
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 

@@ -1,11 +1,11 @@
-# HNG Stage 2 Backend: Natural Language Querying & Seeding
+# Insighta Labs+ Backend
 
-This stage focuses on enhancing the Profile API with automated data seeding and a Natural Language Query (NLQ) engine that allows users to search for profiles using plain English.
+Secure, authenticated FastAPI backend for the Insighta Labs+ platform.
 
 ## 🚀 Live Demo
 
-**Public API URL:** `[INSERT_YOUR_DEPLOYED_URL_HERE]`  
-**API Documentation (Swagger):** `[INSERT_YOUR_DEPLOYED_URL_HERE]/docs`
+**Public API URL:** `https://your-deployed-url.com`  
+**API Documentation (Swagger):** `https://your-deployed-url.com/docs`
 
 ---
 
@@ -13,140 +13,222 @@ This stage focuses on enhancing the Profile API with automated data seeding and 
 
 - **Framework:** [FastAPI](https://fastapi.tiangolo.com/)
 - **Language:** Python 3.9+
-- **HTTP Client:** [HTTPX](https://www.python-httpx.org/) (Asynchronous)
+- **Database:** PostgreSQL with SQLAlchemy ORM
+- **Authentication:** GitHub OAuth 2.0 + JWT with PKCE
 - **Deployment:** [Render / Railway / Fly.io]
-- **CORS:** Enabled for all origins (`*`)
+
+---
+
+## 🏗️ Architecture
+
+### System Overview
+
+Insighta Labs+ consists of three interconnected components:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   CLI Tool      │     │   Web Portal    │     │   Backend API   │
+│  (insighta-cli) │────▶│   (Next.js)     │────▶│   (FastAPI)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │   PostgreSQL    │
+                                                └─────────────────┘
+```
+
+### Security Model
+
+- **OAuth 2.0 + PKCE**: GitHub-based authentication with Proof Key for Code Exchange
+- **JWT Tokens**: Short-lived access tokens (3 min) with refresh token rotation (5 min)
+- **Role-Based Access Control (RBAC)**: `admin` (full access) and `analyst` (read-only)
+- **Rate Limiting**: 10 req/min on auth endpoints, 60 req/min on API endpoints per user
+
+---
+
+## 🔐 Authentication Flow
+
+### Token Lifecycle
+
+1. **Login**: User authenticates via GitHub OAuth
+2. **Access Token** (3 min expiry): Used for API requests
+3. **Refresh** (5 min expiry): Used to obtain new token pairs
+4. **Rotation**: Each refresh invalidates the old refresh token
+5. **Logout**: Server-side token revocation
+
+### Token Handling in Different Interfaces
+
+| Interface | Token Storage                  | Security                             |
+| --------- | ------------------------------ | ------------------------------------ |
+| CLI       | `~/.insighta/credentials.json` | File permissions                     |
+| Web       | HTTP-only cookies              | `HttpOnly`, `Secure`, `SameSite=Lax` |
+
+---
+
+## 👥 Role Enforcement
+
+| Role      | Permissions                                            |
+| --------- | ------------------------------------------------------ |
+| `admin`   | Create profiles, delete profiles, read, search, export |
+| `analyst` | Read, search, export (no modifications)                |
+
+All `/api/*` endpoints require authentication and enforce role permissions via FastAPI dependencies.
 
 ---
 
 ## 🧠 Natural Language Parsing (NLQ) Approach
 
-The parser follows a Pattern-Matching Strategy rather than using heavy AI models. This ensures the search is fast, deterministic, and easily debuggable.
+The parser uses a Pattern-Matching Strategy for fast, deterministic search:
 
-#### 1. Keyword Mapping & Extraction
-
-The logic uses a series of Regular Expressions (Regex) to extract intent from the search string:
-
-| Keyword/Pattern | Captured Value | Logic / Filter Mapping |
-
-|-----------------|----------------|------------------------|
-
-| `(?:from\|in)\s+([a-zA-Z\s]{2,})` | Country Name/Code | Mapped via pycountry to a 2-letter ISO code (country_id). |
-
-| `(?:male\|female\|other)` | Gender | Normalized to lowercase and mapped to gender. |
-
-| `\d+ (standalone)` | Age | If one number is found, it is treated as a specific age. |
-
-| `(\d+)\s+to\s+(\d+)` | Age Range | Mapped to min_age and max_age. |
-
-#### 2. The Logic Flow
-
-- Sanitization: The query is converted to lowercase and stripped of extra whitespace.
-
-- Entity Recognition: The engine runs regex patterns for countries first. It uses the pycountry.countries.lookup() method to handle both full names ("Nigeria") and codes ("NG") interchangeably.
-
-- Numeric Analysis: It scans for numbers to determine age boundaries.
-
-- Filter Assembly: Extracted values are packed into a filters dictionary.
-
-- Fallback: If no recognizable keywords are found, it returns an empty filter set (fetching all profiles by default) or a 400 error if the status is explicitly set to "error".
-
----
-
-## ⚠️ Limitations & Edge Cases
-
-While robust for standard queries, the following limitations apply:
-
-#### 1. Linguistic Limitations
-
-- Conjunctions: The parser does not handle complex "AND/OR" logic. A query like "Males from Kenya OR females from Nigeria" will likely only capture the last detected entities.
-
-- Negation: It cannot handle negative constraints (e.g., "People who are NOT from Nigeria"). It will see "Nigeria" and filter for it.
-
-- Stop-word interference: If a country name is also a common word that isn't preceded by "in" or "from," it may be missed.
-
-#### 2. Edge Cases Left Out
-
-- Ambiguous Abbreviations: Short 2-letter strings that aren't intended as country codes (e.g., "I am in in") may cause pycountry to return a LookupError, which the code catches and ignores.
-
-- Multi-Country Queries: If a user enters two countries (e.g., "People in Kenya and Nigeria"), the current regex implementation typically captures the first match and ignores the rest.
-
-- Non-English Input: The keywords (male, female, from, in) are hardcoded in English.
+| Keyword/Pattern                   | Captured Value    |
+| --------------------------------- | ----------------- |
+| `(?:from\|in)\s+([a-zA-Z\s]{2,})` | Country Name/Code |
+| `(?:male\|female\|other)`         | Gender            |
+| `(\d+)\s+to\s+(\d+)`              | Age Range         |
 
 ---
 
 ## 🚦 API Endpoints
 
-| Method | Endpoint | Description |
+### Authentication
 
-|--------|----------|-------------|
+| Method | Endpoint                | Description                         |
+| ------ | ----------------------- | ----------------------------------- |
+| GET    | `/auth/github`          | Redirect to GitHub OAuth            |
+| GET    | `/auth/github/callback` | Handle OAuth callback, issue tokens |
+| POST   | `/auth/refresh`         | Rotate token pair                   |
+| POST   | `/auth/logout`          | Revoke refresh token                |
 
-| GET | `/api/seed-profiles` | Seeds the database with initial profile data from seed_profiles.json. |
+### Profiles
 
-| GET | `/api/profiles/search` | Performs NLQ search using search, page, and limit params. |
+| Method | Endpoint               | Description                            | Access     |
+| ------ | ---------------------- | -------------------------------------- | ---------- |
+| GET    | `/api/profiles`        | List with filters, sorting, pagination | analyst+   |
+| GET    | `/api/profiles/{id}`   | Get single profile                     | analyst+   |
+| GET    | `/api/profiles/search` | Natural language search                | analyst+   |
+| POST   | `/api/profiles`        | Create new profile                     | admin only |
+| GET    | `/api/profiles/export` | Export as CSV                          | analyst+   |
+
+### Headers Required
+
+All `/api/*` requests must include:
+
+```
+X-API-Version: 1
+Authorization: Bearer <access_token>
+```
 
 ---
 
-## 🛠️ Local Installation
+## 📦 Installation
 
-#### Step 1: Clone the Repository
+```bash
+# Clone and setup
+git clone https://github.com/your-org/HNG14-Backend-Track.git
+cd HNG14-Backend-Track
 
-Open your terminal and run:
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate
 
-```
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
-```
+# Install dependencies
+pip install -r requirements.txt
 
-#### Step 2: Set Up a Virtual Environment
-
-It is highly recommended to use a virtual environment to manage your dependencies.
-
-```
-uv init
-```
-
-#### Step 3: Install Dependencies
-
-Install dependencies using uv:
-
-```
-uv add -r requirements.txt
-
+# Configure environment
+cp .env.example .env
+# Edit .env with your GitHub OAuth credentials
 ```
 
-#### 4. Directory Structure
+### Environment Variables
 
-Your project should look like this:
+```env
+# Database
+POSTGRES_USER=your_user
+POSTGRES_PASSWORD=your_password
+POSTGRES_DB=insighta
+POSTGRES_HOST=localhost
+POSTGRES_HOSTNAME=localhost
+DATABASE_PORT=5432
 
+# GitHub OAuth
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+GITHUB_REDIRECT_URI=http://localhost:8000/auth/github/callback
+
+# JWT
+JWT_SECRET_KEY=your-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=3
+REFRESH_TOKEN_EXPIRE_MINUTES=5
+
+# URLs
+FRONTEND_URL=http://localhost:3000
+ENVIRONMENT=development
 ```
-hng_backend_stage0/
-├── main.py             # Main API logic
-├── requirements.txt    # Project dependencies
-├── .gitignore          # Files to ignore (venv, __pycache__)
-├── app                 # main App logic
-   ├── core             # contains main configration logic
-   ├── models           # contains the schema logic
-   ├── routers          # contains router logic
-   ├── services         # contains logic for external services
-   ├── utils            # contains utility services
-└── README.md           # Project documentation
-```
-
-#### 5. Running the Application
-
-To start the local development server, run:
-
-```
-uv run uvicorn main:app --reload
-```
-
-The --reload flag allows the server to restart automatically whenever you save changes to your code.
-
-By default, the API will be accessible at: http://127.0.0.1:8000/docs
 
 ---
 
-## License
+## 🏃 Running
 
-[MIT](https://choosealicense.com/licenses/mit/)
+```bash
+# Run migrations
+alembic upgrade head
+
+# Start server
+uvicorn main:app --reload
+```
+
+API docs available at: http://localhost:8000/docs
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=app tests/
+```
+
+---
+
+## 📁 Project Structure
+
+```
+HNG14-Backend-Track/
+├── main.py                    # Application entry point
+├── alembic.ini                # Alembic configuration
+├── app/
+│   ├── core/
+│   │   ├── auth.py            # Authentication dependencies
+│   │   ├── config.py          # Settings management
+│   │   ├── database.py        # Database connection
+│   │   ├── limiter.py         # Rate limiting
+│   │   ├── logging.py         # Request logging
+│   │   ├── middleware.py      # API versioning, logging
+│   │   └── security.py        # JWT token creation/verification
+│   ├── models/
+│   │   ├── models.py          # SQLAlchemy models
+│   │   ├── cruds/             # Database operations
+│   │   └── schemas/           # Pydantic schemas
+│   ├── routers/
+│   │   ├── auth.py            # Auth endpoints
+│   │   ├── profiles.py        # Profile endpoints
+│   │   └── ...
+│   └── services/
+│       └── external_api.py    # External API calls
+├── tests/
+│   ├── conftest.py
+│   ├── test_auth.py
+│   └── test_profiles.py
+└── .github/workflows/
+    └── ci.yml                 # GitHub Actions CI
+```
+
+---
+
+## 📄 License
+
+MIT License

@@ -5,30 +5,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from .config import settings
 
 
-environment = settings.ENVIRONMENT
+SQLALCHEMY_DATABASE_URL = (
+    f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
+    f"@{settings.POSTGRES_HOSTNAME}:{settings.DATABASE_PORT}/{settings.POSTGRES_DB}"
+)
 
-if environment != "production":
-    SQLALCHEMY_DATABASE_URL = (
-        "postgresql://adenife:%40AdenifesimI@127.0.0.1:5432/hng14be"
-    )
-
-    # engine = create_engine(
-    #     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    # )  # only needed for sqlite
-else:
-    SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOSTNAME}:{settings.DATABASE_PORT}/{settings.POSTGRES_DB}"
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
-
-
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 
 def get_db():
-    """
-    A function that returns a database session.
-    """
+    """Yield a database session, closing it when done."""
     db = SessionLocal()
     try:
         yield db
@@ -36,13 +24,7 @@ def get_db():
         db.close()
 
 
-# Primary storage: id -> profile data
+# In-memory caches retained from Stage 1 for external API deduplication
 profiles_db: Dict[str, dict] = {}
-
-# Secondary index: name (lowercase) -> id
-# Kept in sync with profiles_db for O(1) duplicate lookups
 profiles_name_index: Dict[str, str] = {}
-
-# External API result cache: name (lowercase) -> enrichment data
-# Avoids redundant calls to Genderize/Agify/Nationalize for the same name
 external_api_cache: Dict[str, dict] = {}
