@@ -1,7 +1,6 @@
 """
 Tests for profile endpoints: auth guards, RBAC, versioning, pagination links, CSV export.
 """
-import pytest
 
 
 HEADERS_V1 = {"X-API-Version": "1"}

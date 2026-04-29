@@ -6,10 +6,8 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.openapi.utils import get_openapi
 
 from app.core.config import settings
-from app.core.database import engine
 from app.core.limiter import limiter
 from app.core.middleware import APIVersionMiddleware, RequestLoggingMiddleware
-from app.models import models
 from app.routers import gender_classifier, populators, profiles
 from app.routers import auth as auth_router
 

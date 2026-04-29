@@ -2,7 +2,7 @@
 Tests for authentication endpoints and token lifecycle.
 """
 import pytest
-from app.core.security import create_access_token, create_refresh_token, hash_token
+from app.core.security import create_access_token, hash_token
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,8 @@ class TestSecurityUtils:
         assert hash_token(raw) == hash_token(raw)
 
     def test_pkce_pair_is_valid(self):
-        import base64, hashlib
+        import base64
+        import hashlib
         from app.core.security import generate_pkce_pair
         verifier, challenge = generate_pkce_pair()
         digest = hashlib.sha256(verifier.encode()).digest()
