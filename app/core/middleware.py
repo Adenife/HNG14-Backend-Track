@@ -1,7 +1,6 @@
 import time
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
-from httpx import request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .logging import configure_logging, LogLevel
