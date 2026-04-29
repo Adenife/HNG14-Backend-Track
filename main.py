@@ -64,6 +64,9 @@ app.openapi = custom_openapi
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Custom middleware (order matters: added last = runs first)
+app.add_middleware(APIVersionMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,9 +75,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Custom middleware (order matters: added last = runs first)
-app.add_middleware(APIVersionMiddleware)
-app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth_router.router, tags=["Auth"], prefix="/auth")
 app.include_router(gender_classifier.router, tags=["Gender Classifier"], prefix="/api")
