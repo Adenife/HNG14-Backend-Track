@@ -1,20 +1,61 @@
+import csv
+import io
 import re
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, Union
-from fastapi import APIRouter, HTTPException, status, Response, Request, Depends, Query
+from typing import Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from ..core.logging import configure_logging, LogLevel
+from ..core.auth import get_current_user, require_admin
+from ..core.database import get_db
+from ..core.limiter import limiter
+from ..core.logging import LogLevel, configure_logging
+from ..models import models
+from ..models.cruds import profileCrud as crud_profile
 from ..models.schemas import profileSchema as schema
 from ..services.external_api import fetch_external_data
-from ..core.limiter import limiter
-from ..models.cruds import profileCrud as crud_profile
-from ..core.database import get_db
 from ..utils.helpers import parse_natural_query
 
 router = APIRouter()
 logger = configure_logging(level=LogLevel.DEBUG)
+
+ALLOWED_SORT_FIELDS = {"age", "created_at", "gender_probability", "country_probability"}
+ALLOWED_ORDER = {"asc", "desc"}
+
+CSV_COLUMNS = [
+    "id",
+    "name",
+    "gender",
+    "gender_probability",
+    "age",
+    "age_group",
+    "country_id",
+    "country_name",
+    "country_probability",
+    "created_at",
+]
+
+
+def _build_links(
+    base_path: str, page: int, limit: int, total: int
+) -> schema.PaginationLinks:
+    total_pages = max(1, -(-total // limit))  # ceiling division
+    self_link = f"{base_path}?page={page}&limit={limit}"
+    next_link = (
+        f"{base_path}?page={page + 1}&limit={limit}" if page < total_pages else None
+    )
+    prev_link = f"{base_path}?page={page - 1}&limit={limit}" if page > 1 else None
+    return schema.PaginationLinks(self=self_link, next=next_link, prev=prev_link)
 
 
 @router.post(
@@ -23,43 +64,50 @@ logger = configure_logging(level=LogLevel.DEBUG)
     response_model=schema.ProfileResponse,
     response_model_exclude_none=True,
 )
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 async def create_profile(
     request: Request,
     payload: schema.ProfileCreateRequest,
     response: Response,
     db: Session = Depends(get_db),
+    _: models.User = Depends(require_admin),
 ):
     """
-    Creates a new profile in the database.
+    Create a new profile (admin only).
 
     Args:
-    payload (schema.ProfileCreateRequest): The name of the profile to be created.
+        request (Request): The incoming HTTP request.
+        payload (schema.ProfileCreateRequest): The profile data to create.
+        response (Response): The HTTP response object.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated admin user.
 
     Returns:
-    Union[schema.ProfileResponse, schema.ProfileAlreadyExistsResponse]: A dictionary containing the created profile data or an error message if the profile already exists.
+        schema.ProfileResponse: A dictionary containing the created profile data.
 
     Raises:
-    HTTPException: If the request is invalid or if an internal error occurs.
+        HTTPException: If the name is missing, empty, or contains non-alphabetic characters.
+        HTTPException: If the user is not an admin.
     """
+    """Create a new profile (admin only). Calls external APIs for enrichment."""
     name = str(payload.name).strip()
     logger.info(f"Profile creation request for name: {name}")
 
     try:
-        if not name or name == "":
+        if not name:
             raise HTTPException(
                 status_code=400,
                 detail={"status": "error", "message": "Missing or empty name"},
             )
 
-        if not re.match("^[a-zA-Z]+$", name):
+        if not re.match(r"^[a-zA-Z\s]+$", name):
             raise HTTPException(
-                status_code=422, detail={"status": "error", "message": "Invalid type"}
+                status_code=422,
+                detail={"status": "error", "message": "Name must contain only letters"},
             )
 
         processed_name = name.lower()
 
-        # Idempotency — O(1) lookup via name index
         checker = await crud_profile.get_profile_by_name(db, name=processed_name)
         if checker:
             response.status_code = status.HTTP_200_OK
@@ -77,7 +125,7 @@ async def create_profile(
 
     except HTTPException as he:
         logger.warning(f"HTTPException: {he.detail}")
-        raise he
+        raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
         raise HTTPException(
@@ -87,66 +135,16 @@ async def create_profile(
 
 
 @router.get(
-    "/profiles/old",
-    response_model=schema.ProfileListResponse_Old,
-    status_code=status.HTTP_200_OK,
-)
-async def get_all_profiles_old(
-    db: Session = Depends(get_db),
-    gender: Optional[str] = None,
-    country_id: Optional[str] = None,
-    age_group: Optional[str] = None,
-):
-    """
-    Retrieves all profiles from the database that match the specified filters.
-
-    Parameters:
-        - db (Session): The database session.
-        - gender (Optional[str]): The gender of the profiles to retrieve. Defaults to None.
-        - country_id (Optional[str]): The country ID of the profiles to retrieve. Defaults to None.
-        - age_group (Optional[str]): The age group of the profiles to retrieve. Defaults to None.
-
-    Returns:
-        - schema.ProfileListResponse_Old: The response containing the list of profiles and the total count.
-            - status (str): The status of the request.
-            - count (int): The total count of profiles.
-            - data (List[ProfileDataSchema]): The list of profile data.
-
-    Raises:
-        - HTTPException: If an HTTP exception occurs.
-        - Exception: If any other exception occurs.
-    """
-    try:
-        results = await crud_profile.get_profiles_old(
-            db, gender=gender, country_id=country_id, age_group=age_group
-        )
-
-        if not results:
-            return schema.ProfileListResponse_Old(status="success", count=0, data=[])
-
-        return schema.ProfileListResponse_Old(
-            status="success", count=len(results), data=results
-        )
-
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
-        raise
-    except Exception as e:
-        logger.critical(f"Internal Error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-        )
-
-
-@router.get(
     "/profiles",
     response_model=schema.ProfileListResponse,
     response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("60/minute")
 async def get_all_profiles(
+    request: Request,
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
     gender: Optional[str] = None,
     country_id: Optional[str] = None,
     age_group: Optional[str] = None,
@@ -160,59 +158,39 @@ async def get_all_profiles(
     limit: int = Query(10, ge=1, le=50),
 ):
     """
-    Retrieves a paginated list of profiles from the database that match the specified filters.
+    List profiles with filtering, sorting, pagination, and navigation links.
 
-    Parameters:
-        - db (Session): The database session.
-        - gender (Optional[str]): The gender of the profiles to retrieve. Defaults to None.
-        - country_id (Optional[str]): The country ID of the profiles to retrieve. Defaults to None.
-        - age_group (Optional[str]): The age group of the profiles to retrieve. Defaults to None.
-        - min_age (Optional[int]): The minimum age of the profiles to retrieve. Defaults to None.
-        - max_age (Optional[int]): The maximum age of the profiles to retrieve. Defaults to None.
-        - min_gender_probability (Optional[float]): The minimum gender probability of the profiles to retrieve. Defaults to None.
-        - min_country_probability (Optional[float]): The minimum country probability of the profiles to retrieve. Defaults to None.
-        - sort_by (Optional[str]): The field to sort the profiles by. Defaults to "created_at".
-        - order (Optional[str]): The order to sort the profiles by. Defaults to "desc".
-        - page (int): The page number of the results to retrieve. Defaults to 1.
-        - limit (int): The maximum number of profiles per page. Defaults to 10.
+    Args:
+        request (Request): The incoming HTTP request.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated current user.
+        gender (Optional[str]): Filter by gender.
+        country_id (Optional[str]): Filter by country ID.
+        age_group (Optional[str]): Filter by age group.
+        min_age (Optional[int]): Minimum age filter.
+        max_age (Optional[int]): Maximum age filter.
+        min_gender_probability (Optional[float]): Minimum gender probability filter.
+        min_country_probability (Optional[float]): Minimum country probability filter.
+        sort_by (Optional[str]): Field to sort by (default: created_at).
+        order (Optional[str]): Sort order (asc or desc).
+        page (int): Page number (default: 1).
+        limit (int): Items per page (default: 10, max: 50).
 
     Returns:
-        - schema.ProfileListResponse: The response containing the list of profiles and the total count.
-            - status (str): The status of the request.
-            - page (int): The page number of the results.
-            - limit (int): The maximum number of profiles per page.
-            - total (int): The total count of profiles.
-            - data (List[ProfileDataSchema]): The list of profile data.
+        schema.ProfileListResponse: A dictionary containing paginated profile data and links.
 
     Raises:
-        - HTTPException: If an HTTP exception occurs.
-        - Exception: If any other exception occurs.
+        HTTPException: If query parameters are invalid.
     """
+    """List profiles with filtering, sorting, pagination, and navigation links."""
     try:
-
-        ALLOWED_SORT_FIELDS = {
-            "age",
-            "created_at",
-            "gender_probability",
-            "country_probability",
-        }
-        ALLOWED_ORDER = {"asc", "desc"}
-
-        # 2. Check if the values are valid (This replaces the None check)
         if sort_by not in ALLOWED_SORT_FIELDS or order not in ALLOWED_ORDER:
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "status": "error",
-                    "message": "Invalid Query Parameters",
-                    # "allowed_sort_by": list(ALLOWED_SORT_FIELDS),
-                    # "allowed_order": list(ALLOWED_ORDER)
-                },
+                detail={"status": "error", "message": "Invalid Query Parameters"},
             )
 
-        # Pagination math
         skip = (page - 1) * limit
-
         results, total_count = await crud_profile.get_profiles(
             db,
             gender=gender,
@@ -228,13 +206,17 @@ async def get_all_profiles(
             limit=limit,
         )
 
-        if not results:
-            return schema.ProfileListResponse(
-                status="success", page=page, limit=limit, total=total_count, data=[]
-            )
+        total_pages = max(1, -(-total_count // limit))
+        links = _build_links("/api/profiles", page, limit, total_count)
 
         return schema.ProfileListResponse(
-            status="success", page=page, limit=limit, total=total_count, data=results
+            status="success",
+            page=page,
+            limit=limit,
+            total=total_count,
+            total_pages=total_pages,
+            links=links,
+            data=results or [],
         )
 
     except HTTPException:
@@ -244,35 +226,122 @@ async def get_all_profiles(
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
+@router.get("/profiles/export")
+@limiter.limit("60/minute")
+async def export_profiles(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+    fmt: str = Query("csv", alias="format"),
+    gender: Optional[str] = None,
+    country_id: Optional[str] = None,
+    age_group: Optional[str] = None,
+    min_age: Optional[int] = None,
+    max_age: Optional[int] = None,
+    sort_by: Optional[str] = "created_at",
+    order: Optional[str] = "desc",
+):
+    """
+    Export profiles as CSV with the same filter/sort support as GET /api/profiles.
+
+    Args:
+        request (Request): The incoming HTTP request.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated current user.
+        fmt (str): Export format (only csv is supported).
+        gender (Optional[str]): Filter by gender.
+        country_id (Optional[str]): Filter by country ID.
+        age_group (Optional[str]): Filter by age group.
+        min_age (Optional[int]): Minimum age filter.
+        max_age (Optional[int]): Maximum age filter.
+        sort_by (Optional[str]): Field to sort by.
+        order (Optional[str]): Sort order.
+
+    Returns:
+        StreamingResponse: A CSV file download.
+
+    Raises:
+        HTTPException: If format is not csv or query parameters are invalid.
+    """
+    """Export profiles as CSV with the same filter/sort support as GET /api/profiles."""
+    if fmt.lower() != "csv":
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Only format=csv is supported"},
+        )
+
+    if sort_by not in ALLOWED_SORT_FIELDS or order not in ALLOWED_ORDER:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Invalid Query Parameters"},
+        )
+
+    results, _ = await crud_profile.get_profiles(
+        db,
+        gender=gender,
+        country_id=country_id,
+        age_group=age_group,
+        min_age=min_age,
+        max_age=max_age,
+        sort_by=sort_by,
+        order_by=order,
+        skip=0,
+        limit=100_000,  # Export all matching rows
+    )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    for profile in results:
+        row = {col: getattr(profile, col, "") for col in CSV_COLUMNS}
+        writer.writerow(row)
+
+    output.seek(0)
+    from datetime import datetime
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"profiles_{timestamp}.csv"
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get(
     "/profiles/search",
     response_model=schema.ProfileListResponse,
     response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("60/minute")
 async def get_profile_natural_query(
+    request: Request,
     db: Session = Depends(get_db),
-    q: str = Query(..., min_length=1, max_length=200, alias="q"),
+    _: models.User = Depends(get_current_user),
+    q: str = Query(..., min_length=1, max_length=200),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
 ):
     """
-    Retrieves a list of profiles based on a natural language query.
+    Search profiles using natural language (e.g. 'young males from nigeria').
 
-    This function takes a natural language query as input and returns a list of profiles that match the query.
-    The query can include filters such as gender, country, age group, minimum age, maximum age, minimum gender probability, and minimum country probability.
-    The results are paginated and can be sorted by age, creation date, gender probability, or country probability.
-    The function also supports specifying the order of the results (ascending or descending).
-
-    Parameters:
-        db (Session): The database session.
-        search (str): The natural language query.
-        page (int): The page number of the results.
-        limit (int): The number of profiles per page.
+    Args:
+        request (Request): The incoming HTTP request.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated current user.
+        q (str): Natural language search query.
+        page (int): Page number (default: 1).
+        limit (int): Items per page (default: 10, max: 50).
 
     Returns:
-        ProfileListResponse: The response containing the status, page number, limit, total count, and the list of matching profiles.
+        schema.ProfileListResponse: A dictionary containing paginated profile data and links.
+
+    Raises:
+        HTTPException: If the query is invalid or parsing fails.
     """
+    """Search profiles using natural language (e.g. 'young males from nigeria')."""
     try:
         filters = parse_natural_query(q)
 
@@ -281,9 +350,8 @@ async def get_profile_natural_query(
                 status_code=400,
                 detail={"status": "error", "message": filters["message"]},
             )
-        # Pagination math
-        skip = (page - 1) * limit
 
+        skip = (page - 1) * limit
         results, total_count = await crud_profile.get_profiles(
             db,
             gender=filters.get("gender"),
@@ -295,24 +363,24 @@ async def get_profile_natural_query(
             limit=limit,
         )
 
-        if not results:
-            return schema.ProfileListResponse(
-                status="success", page=page, limit=limit, total=total_count, data=[]
-            )
+        total_pages = max(1, -(-total_count // limit))
+        links = _build_links("/api/profiles/search", page, limit, total_count)
 
         return schema.ProfileListResponse(
-            status="success", page=page, limit=limit, total=total_count, data=results
+            status="success",
+            page=page,
+            limit=limit,
+            total=total_count,
+            total_pages=total_pages,
+            links=links,
+            data=results or [],
         )
 
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
+    except HTTPException:
         raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-        )
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.get(
@@ -321,33 +389,40 @@ async def get_profile_natural_query(
     response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("60/minute")
 async def get_single_profile(
+    request: Request,
     id: uuid.UUID,
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
 ):
     """
-    Retrieves a single profile from the database.
+    Retrieve a single profile by UUID.
 
     Args:
-        id (str): The unique identifier of the profile to retrieve.
+        request (Request): The incoming HTTP request.
+        id (uuid.UUID): The unique identifier of the profile.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated current user.
 
     Returns:
-        schema.ProfileResponse: A dictionary containing the retrieved profile data.
+        schema.ProfileResponse: A dictionary containing the profile data.
 
     Raises:
         HTTPException: If the profile is not found.
     """
+    """Retrieve a single profile by UUID."""
     try:
         profile = await crud_profile.get_profile(db, user_id=id)
         if not profile:
-            err_msg = {"status": "error", "message": "Profile not found"}
-            logger.warning(f"HTTPException: {err_msg}")
-            raise HTTPException(status_code=404, detail=err_msg)
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Profile not found"},
+            )
         return {"status": "success", "data": profile}
 
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
         raise HTTPException(
@@ -357,51 +432,96 @@ async def get_single_profile(
 
 
 @router.delete(
-    "/profiles/{id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT
+    "/profiles/{id}",
+    response_model=None,
+    status_code=status.HTTP_204_NO_CONTENT,
 )
+@limiter.limit("60/minute")
 async def delete_profile(
+    request: Request,
     id: uuid.UUID,
     db: Session = Depends(get_db),
+    _: models.User = Depends(require_admin),
 ):
     """
-    Deletes a single profile from the database.
+    Delete a profile by UUID (admin only).
 
     Args:
-        id (str): The unique identifier of the profile to delete.
+        request (Request): The incoming HTTP request.
+        id (uuid.UUID): The unique identifier of the profile to delete.
+        db (Session): The database session dependency.
+        _ (models.User): The authenticated admin user.
 
     Returns:
-        None
+        Response: A 204 No Content response on success.
 
     Raises:
-        HTTPException: If the profile is not found.
+        HTTPException: If the profile is not found or user is not an admin.
     """
+    """Delete a profile by UUID (admin only)."""
     try:
         profile = await crud_profile.get_profile(db, user_id=id)
-
         if not profile:
-            err_msg = {"status": "error", "message": "Profile not found"}
-            logger.warning(f"HTTPException: {err_msg}")
-            raise HTTPException(status_code=404, detail=err_msg)
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Profile not found"},
+            )
 
-        # Remove from both structures to keep them in sync
         result = await crud_profile.delete_profile(db, user_id=id)
         if result:
-            logger.info(f"Profile deleted successfully: {id}")
+            logger.info(f"Profile deleted: {id}")
             return Response(status_code=status.HTTP_204_NO_CONTENT)
-        else:
-            logger.error(f"Profile deletion failed: {id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Unable to delete profile",
-            )
-        return None
 
-    except HTTPException as he:
-        logger.warning(f"HTTPException: {he.detail}")
-        raise he
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": "Unable to delete profile"},
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.critical(f"Internal Error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": "Internal Server Error"},
         )
+
+
+@router.get(
+    "/profiles/old",
+    response_model=schema.ProfileListResponse_Old,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def get_all_profiles_old(
+    db: Session = Depends(get_db),
+    gender: Optional[str] = None,
+    country_id: Optional[str] = None,
+    age_group: Optional[str] = None,
+):
+    """
+    Legacy endpoint preserved from Stage 2.
+
+    Args:
+        db (Session): The database session dependency.
+        gender (Optional[str]): Filter by gender.
+        country_id (Optional[str]): Filter by country ID.
+        age_group (Optional[str]): Filter by age group.
+
+    Returns:
+        schema.ProfileListResponse_Old: A dictionary containing profile data in old format.
+
+    Raises:
+        HTTPException: If an internal error occurs.
+    """
+    """Legacy endpoint preserved from Stage 2."""
+    try:
+        results = await crud_profile.get_profiles_old(
+            db, gender=gender, country_id=country_id, age_group=age_group
+        )
+        return schema.ProfileListResponse_Old(
+            status="success", count=len(results) if results else 0, data=results or []
+        )
+    except Exception as e:
+        logger.critical(f"Internal Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
