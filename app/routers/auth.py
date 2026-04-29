@@ -138,7 +138,7 @@ async def github_callback(
         )
 
     redirect_uri = session["redirect_uri"]
-    is_cli = session.get("is_cli", False)
+    # is_cli = session.get("is_cli", False)
 
     used_states.add(state)
     oauth_sessions.pop(state, None)
