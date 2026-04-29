@@ -1,6 +1,7 @@
 import time
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from httpx import request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .logging import configure_logging, LogLevel
@@ -53,7 +54,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
     Auth and health-check routes are exempt.
     """
 
-    EXEMPT_PREFIXES = ("/auth/", "/docs", "/redoc", "/openapi", "/api/check")
+    EXEMPT_PREFIXES = ("/auth", "/docs", "/redoc", "/openapi", "/api/check")
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """
@@ -79,7 +80,9 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip exempt routes
-        if any(path.startswith(p) for p in self.EXEMPT_PREFIXES):
+        # if any(path.startswith(p) for p in self.EXEMPT_PREFIXES):
+        #     return await call_next(request)
+        if any(path.startswith(p) for p in self.EXEMPT_PATHS):
             return await call_next(request)
 
         # Skip Swagger UI (important fix)
