@@ -2,7 +2,6 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-import uuid
 
 from .database import get_db
 from .security import verify_token
@@ -28,6 +27,17 @@ async def get_current_user(
     Raises:
         KeyError: If the user's information cannot be retrieved from the session.
 
+    Examples:
+        >>> user = get_current_user()
+        >>> user['username']
+        'johndoe'
+        >>> user['email']
+        'johndoe@example.com'
+        >>> user['role']
+        'admin'
+        >>> get_current_user()  # If the user is not logged in
+        {}
+
     Notes:
         - This function assumes that the user's information is stored in the session under the key 'user_info'.
         - The function checks if the 'user_info' key is present in the session and retrieves the corresponding value.
@@ -50,21 +60,7 @@ async def get_current_user(
         )
 
     payload = verify_token(token, expected_type="access")
-    if not payload or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"status": "error", "message": "Missing authentication token"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        # user_id = payload.get("sub")
-        user_id = uuid.UUID(payload["sub"])
-    except KeyError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"status": "error", "message": "Invalid user identifier in token"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    user_id = payload.get("sub")
 
     user = await userCrud.get_user_by_id(db, user_id)
     if not user:
