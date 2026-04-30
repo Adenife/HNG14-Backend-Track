@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from ..core.config import settings
 from ..core.database import external_api_cache
 from ..core.logging import configure_logging, LogLevel
-from ..utils.helpers import get_age_group
+from ..utils.helpers import get_age_group, get_country_by_code
 
 logger = configure_logging(level=LogLevel.DEBUG)
 
@@ -105,6 +105,6 @@ async def fetch_external_data(name: str):
             "age": a_res["age"],
             "age_group": get_age_group(a_res["age"]),
             "country_id": top_country["country_id"],
-            "country_name": top_country["country_name"],
+            "country_name": get_country_by_code(top_country["country_id"]),
             "country_probability": top_country["probability"],
         }

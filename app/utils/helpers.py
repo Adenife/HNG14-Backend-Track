@@ -2,7 +2,6 @@ from typing import Dict, Any
 import re
 import pycountry
 
-
 AGE_GROUPS: Dict[str, tuple[int, int]] = {
     "child": (0, 12),
     "teenager": (13, 19),
@@ -31,6 +30,23 @@ def get_country_code(country_name: str):
     try:
         # Search for the country by name
         return pycountry.countries.lookup(country_name).alpha_2
+    except LookupError:
+        return None
+
+
+def get_country_by_code(country_code: str):
+    """
+    Retrieves the ISO 3166-1 alpha-2 country code for a given country name.
+
+    Parameters:
+    - country_name: A string representing the full name of the country.
+
+    Returns:
+    - A string containing the 2-letter country code if found, otherwise None.
+    """
+    try:
+        # Search for the country by name
+        return pycountry.countries.lookup(country_code).name
     except LookupError:
         return None
 
