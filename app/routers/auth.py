@@ -111,39 +111,32 @@ async def github_callback(
     Raises:
         HTTPException: If the state is invalid or expired.
     """
-    if not code:
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "error", "message": "Missing authorization code"},
-        )
-
-    if not state:
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "error", "message": "Missing state parameter"},
-        )
-
     if state in used_states:
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "error", "message": "State already used"},
+        return Response(
+            content="""
+            <html>
+                <body style="font-family:sans-serif;text-align:center;padding:60px">
+                    <h3>Login already completed</h3>
+                    <p>You can safely close this tab.</p>
+                </body>
+            </html>
+            """,
+            media_type="text/html",
         )
 
     session = oauth_sessions.get(state)
 
     if not session:
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "error", "message": "Invalid or expired state"},
-        )
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
 
     redirect_uri = session["redirect_uri"]
-    # is_cli = session.get("is_cli", False)
+    is_cli = session.get("is_cli", False)
 
     used_states.add(state)
     oauth_sessions.pop(state, None)
 
     if code == "test_code":
+        # Try to find existing admin
         user = db.query(models.User).filter_by(email="admin@example.com").first()
 
         if not user:
@@ -159,15 +152,21 @@ async def github_callback(
             db.commit()
             db.refresh(user)
 
-        payload = {"sub": str(user.id), "role": user.role}
+        token_payload = {"sub": str(user.id), "role": user.role}
+        access_token = create_access_token(token_payload)
+        refresh_token = create_refresh_token(token_payload)
 
         return {
             "status": "success",
-            "access_token": create_access_token(payload),
-            "refresh_token": create_refresh_token(payload),
+            "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "username": user.username,
         }
+
+    if is_cli:
+        redirect_url = f"{redirect_uri}?code={code}&state={state}"
+        return RedirectResponse(redirect_url)
 
     redirect_url = f"{redirect_uri}?code={code}&state={state}"
     return RedirectResponse(redirect_url)
