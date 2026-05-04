@@ -147,3 +147,31 @@ def parse_natural_query(q: str) -> Dict[str, Any]:
         return {"status": "error", "message": "Unable to interpret query"}
 
     return filters
+
+
+def normalize_filters(filters: Dict[str, Any]) -> str:
+    """
+    Normalizes a filter dictionary into a canonical string format for consistent cache keys.
+    """
+    if not filters:
+        return ""
+
+    # Filter out None values and handle internal error status
+    cleaned_filters = {
+        k: v
+        for k, v in filters.items()
+        if v is not None and k not in ["status", "message"]
+    }
+
+    # Sort keys to ensure deterministic ordering
+    sorted_keys = sorted(cleaned_filters.keys())
+
+    # Build a string of key:value pairs
+    parts = []
+    for key in sorted_keys:
+        value = cleaned_filters[key]
+        if isinstance(value, str):
+            value = value.lower().strip()
+        parts.append(f"{key}:{value}")
+
+    return "|".join(parts)
