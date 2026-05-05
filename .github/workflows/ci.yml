@@ -66,8 +66,15 @@ jobs:
       #   run: uv run alembic upgrade head
 
       # In your GitHub Actions workflow
-      - name: Skip migrations - DB already at head
+      - name: Check database migration status
         run: |
-          # Just verify we're at the right version
-          uv run alembic current
-          # No need to run upgrade
+          CURRENT=$(uv run alembic current | grep -v "INFO" | tail -n 1)
+          echo "Database at revision: $CURRENT"
+
+          if [ "$CURRENT" != "58abf52992b5" ]; then
+            echo "ERROR: Database is not at expected revision!"
+            echo "Expected: 58abf52992b5"
+            echo "Found: $CURRENT"
+            exit 1
+          fi
+          echo "Database schema is up to date"

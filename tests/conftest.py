@@ -1,5 +1,4 @@
-import pytest
-from fastapi.testclient import TestClient
+import pytest# from fastapi.testclient import TestClient
 from main import app
 from app.core.database import get_db
 from app.core.auth import get_current_user, require_admin
@@ -7,7 +6,7 @@ from app.models import models
 import uuid
 import datetime
 
-# Use an in-memory SQLite for testing if possible, 
+# Use an in-memory SQLite for testing if possible,
 # but keep in mind Postgres-specific types might fail.
 # For this task, we will mock the DB session to be safe.
 
@@ -31,14 +30,14 @@ def client(mocker):
         is_active=True,
         created_at=datetime.datetime.now(datetime.UTC)
     )
-    
+
     app.dependency_overrides[get_current_user] = lambda: mock_user
     app.dependency_overrides[require_admin] = lambda: mock_user
-    
+
     with TestClient(app) as c:
         c.headers.update({"X-API-Version": "1"})
         yield c
-    
+
     app.dependency_overrides.clear()
 
 @pytest.fixture
