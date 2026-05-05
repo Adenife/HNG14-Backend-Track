@@ -1,6 +1,4 @@
 import pytest
-from unittest.mock import AsyncMock, patch
-import uuid
 
 @pytest.mark.asyncio
 async def test_auth_protected_route(client):

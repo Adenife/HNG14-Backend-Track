@@ -1,6 +1,6 @@
 import csv
 import io
-from typing import Dict, List, Any
+from typing import Dict, Any
 from sqlalchemy.orm import Session
 from ..models import models
 from ..models.cruds import profileCrud as crud_profile
@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 REQUIRED_FIELDS = ["name", "gender", "age", "country_id"]
 RECOGNIZED_GENDERS = ["male", "female"]
 
+
 async def process_csv(db: Session, file_content: bytes) -> Dict[str, Any]:
     """
     Processes a CSV file for profile ingestion.
@@ -19,7 +20,7 @@ async def process_csv(db: Session, file_content: bytes) -> Dict[str, Any]:
     """
     stream = io.StringIO(file_content.decode("utf-8"))
     reader = csv.DictReader(stream)
-    
+
     summary = {
         "status": "success",
         "total_rows": 0,
@@ -30,20 +31,20 @@ async def process_csv(db: Session, file_content: bytes) -> Dict[str, Any]:
             "invalid_age": 0,
             "unrecognized_gender": 0,
             "missing_fields": 0,
-            "malformed_row": 0
-        }
+            "malformed_row": 0,
+        },
     }
 
     # To optimize name checks, we can fetch existing names in batches if needed
     # But for simplicity and correctness with concurrent uploads, we'll check each row
     # or use a local cache for the current session.
-    
+
     batch_size = 1000
-    current_batch = []
+    # current_batch = []
 
     for row in reader:
         summary["total_rows"] += 1
-        
+
         try:
             # 1. Check for missing fields
             if not all(row.get(field) for field in REQUIRED_FIELDS):
@@ -86,18 +87,20 @@ async def process_csv(db: Session, file_content: bytes) -> Dict[str, Any]:
                 "gender_probability": float(row.get("gender_probability", 1.0)),
                 "country_probability": float(row.get("country_probability", 1.0)),
                 "country_name": row.get("country_name"),
-                "sample_size": int(row.get("sample_size", 0)) if row.get("sample_size") else 0
+                "sample_size": (
+                    int(row.get("sample_size", 0)) if row.get("sample_size") else 0
+                ),
             }
-            
+
             # Create the profile object
             db_profile = models.Profile(**profile_data)
             db.add(db_profile)
             summary["inserted"] += 1
-            
+
             # Commit in batches to keep memory low and improve performance
             if summary["inserted"] % batch_size == 0:
                 db.commit()
-                
+
         except Exception as e:
             logger.error(f"Error processing row: {e}")
             summary["skipped"] += 1
@@ -106,5 +109,5 @@ async def process_csv(db: Session, file_content: bytes) -> Dict[str, Any]:
 
     # Final commit for the last batch
     db.commit()
-    
+
     return summary

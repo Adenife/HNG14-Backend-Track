@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-import io
 
 @pytest.mark.asyncio
 async def test_csv_upload_success(client):
