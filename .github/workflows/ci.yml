@@ -78,3 +78,6 @@ jobs:
             exit 1
           fi
           echo "Database schema is up to date"
+
+      - name: Run tests
+        run: uv run pytest
