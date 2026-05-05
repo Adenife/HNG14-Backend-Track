@@ -62,5 +62,28 @@ jobs:
         run: uv run mypy app/ --ignore-missing-imports --no-strict-optional
         continue-on-error: true # Non-blocking for now
 
-      - name: Run Alembic migrations
-        run: uv run alembic upgrade head
+      # - name: Run Alembic migrations
+      #   run: uv run alembic upgrade head
+
+      # In your GitHub Actions workflow
+      - name: Check and Sync Database Migrations
+        run: |
+          # 1. Get the current database revision
+          CURRENT=$(uv run alembic current 2>&1 | grep -oE '[a-f0-9]{12}' | head -1)
+          
+          # 2. Get the latest available revision (head)
+          LATEST=$(uv run alembic heads 2>&1 | grep -oE '[a-f0-9]{12}' | head -1)
+
+          echo "Current DB revision:  ${CURRENT:-'None/Empty'}"
+          echo "Latest local revision: $LATEST"
+
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "✅ Database is already at the latest version ($CURRENT). Skipping migration."
+          else
+            echo "🔄 Database is out of sync. Running migrations..."
+            uv run alembic upgrade head
+            echo "✅ Migration complete."
+          fi
+
+      - name: Run tests
+        run: uv run pytest

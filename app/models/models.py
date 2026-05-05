@@ -22,13 +22,13 @@ def current_time():
 class Profile(Base):
     __tablename__ = "profile"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid7)
-    name = Column(String(255), nullable=False)
-    gender = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    gender = Column(String(255), nullable=False, index=True)
     gender_probability = Column(Numeric(128), nullable=False)
     sample_size = Column(Integer, nullable=True)
-    age = Column(Integer, nullable=False)
-    age_group = Column(String(255), nullable=False)
-    country_id = Column(String(255), nullable=False)
+    age = Column(Integer, nullable=False, index=True)
+    age_group = Column(String(255), nullable=False, index=True)
+    country_id = Column(String(255), nullable=False, index=True)
     country_name = Column(String(255), nullable=True)
     country_probability = Column(Numeric(128), nullable=False)
     created_at = Column(

@@ -12,6 +12,8 @@ from fastapi import (
     Request,
     Response,
     status,
+    File,
+    UploadFile,
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -24,8 +26,10 @@ from ..models import models
 from ..models.cruds import profileCrud as crud_profile
 from ..models.schemas import profileSchema as schema
 from ..services.external_api import fetch_external_data
-from ..utils.helpers import parse_natural_query
+from ..utils.helpers import parse_natural_query, normalize_filters
 from ..models.schemas.userSchema import WhoAmIResponse
+from ..core.cache import query_cache
+from ..services.csv_processor import process_csv
 
 router = APIRouter()
 logger = configure_logging(level=LogLevel.DEBUG)
@@ -122,6 +126,7 @@ async def create_profile(
         profile_data = {"name": processed_name, **ext_data}
 
         new_profile = await crud_profile.create_profile(db, profile_data)
+        query_cache.invalidate_all()
         return {"status": "success", "data": new_profile}
 
     except HTTPException as he:
@@ -191,6 +196,26 @@ async def get_all_profiles(
                 detail={"status": "error", "message": "Invalid Query Parameters"},
             )
 
+        # Normalization and Caching
+        filter_params = {
+            "gender": gender,
+            "country_id": country_id,
+            "age_group": age_group,
+            "min_age": min_age,
+            "max_age": max_age,
+            "min_gender_probability": min_gender_probability,
+            "min_country_probability": min_country_probability,
+            "sort_by": sort_by,
+            "order": order,
+        }
+        normalized_key = normalize_filters(filter_params)
+        cache_key = f"profiles|{normalized_key}|page:{page}|limit:{limit}"
+
+        cached_result = query_cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Cache hit for key: {cache_key}")
+            return cached_result
+
         skip = (page - 1) * limit
         results, total_count = await crud_profile.get_profiles(
             db,
@@ -210,7 +235,7 @@ async def get_all_profiles(
         total_pages = max(1, -(-total_count // limit))
         links = _build_links("/api/profiles", page, limit, total_count)
 
-        return schema.ProfileListResponse(
+        response_data = schema.ProfileListResponse(
             status="success",
             page=page,
             limit=limit,
@@ -219,6 +244,9 @@ async def get_all_profiles(
             links=links,
             data=results or [],
         )
+
+        query_cache.set(cache_key, response_data)
+        return response_data
 
     except HTTPException:
         raise
@@ -352,6 +380,15 @@ async def get_profile_natural_query(
                 detail={"status": "error", "message": filters["message"]},
             )
 
+        # Normalization and Caching
+        normalized_key = normalize_filters(filters)
+        cache_key = f"search|{normalized_key}|page:{page}|limit:{limit}"
+
+        cached_result = query_cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Cache hit for search key: {cache_key}")
+            return cached_result
+
         skip = (page - 1) * limit
         results, total_count = await crud_profile.get_profiles(
             db,
@@ -367,7 +404,7 @@ async def get_profile_natural_query(
         total_pages = max(1, -(-total_count // limit))
         links = _build_links("/api/profiles/search", page, limit, total_count)
 
-        return schema.ProfileListResponse(
+        response_data = schema.ProfileListResponse(
             status="success",
             page=page,
             limit=limit,
@@ -376,6 +413,9 @@ async def get_profile_natural_query(
             links=links,
             data=results or [],
         )
+
+        query_cache.set(cache_key, response_data)
+        return response_data
 
     except HTTPException:
         raise
@@ -471,6 +511,7 @@ async def delete_profile(
         result = await crud_profile.delete_profile(db, user_id=id)
         if result:
             logger.info(f"Profile deleted: {id}")
+            query_cache.invalidate_all()
             return Response(status_code=status.HTTP_204_NO_CONTENT)
 
         raise HTTPException(
@@ -549,3 +590,41 @@ async def whoami(
     """
 
     return {"status": "success", "data": current_user}
+
+
+@router.post(
+    "/profiles/upload",
+    status_code=status.HTTP_200_OK,
+)
+@limiter.limit("5/minute")
+async def upload_profiles_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_admin),
+):
+    """
+    Upload a CSV file of profiles for bulk ingestion (admin only).
+    """
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Only CSV files are allowed"},
+        )
+
+    try:
+        content = await file.read()
+        summary = await process_csv(db, content)
+        
+        # Invalidate cache after bulk insert
+        if summary["inserted"] > 0:
+            query_cache.invalidate_all()
+            
+        return summary
+
+    except Exception as e:
+        logger.critical(f"CSV Upload Error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": "Internal Server Error during processing"},
+        )
