@@ -19,15 +19,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # 2. ADD THE TABLE CREATION LOGIC HERE
     op.create_table('profile',
         sa.Column('id', sa.UUID(), nullable=False),
-        sa.Column('user_id', sa.UUID(), nullable=False),
-        sa.Column('age', sa.Integer(), nullable=True),
-        # ... add your other profile columns here ...
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
+        sa.Column('name', sa.String(length=255), nullable=False),
+        sa.Column('gender', sa.String(length=255), nullable=False),
+        sa.Column('gender_probability', sa.Numeric(precision=128), nullable=False),
+        sa.Column('sample_size', sa.Integer(), nullable=True),
+        sa.Column('age', sa.Integer(), nullable=False),
+        sa.Column('age_group', sa.String(length=255), nullable=False),
+        sa.Column('country_id', sa.String(length=255), nullable=False),
+        sa.Column('country_name', sa.String(length=255), nullable=True),
+        sa.Column('country_probability', sa.Numeric(precision=128), nullable=False),
+        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('name')
     )
+    # Note: We don't need to add the indexes here because your 
+    # next migration (58abf52992b5) is already trying to add them.
 
 def downgrade():
     op.drop_table('profile')
